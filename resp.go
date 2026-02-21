@@ -55,7 +55,7 @@ func (r *Resp) readInteger() (x int, n int, err error) {
 	}
 	i64, err := strconv.ParseInt(string(line), 10, 64)
 	if err != nil {
-		return 0, n, nil
+		return 0, n, err
 	}
 	return int(i64), n, nil
 }
@@ -82,13 +82,16 @@ func (r *Resp) readArray() (v Value, err error) {
 func (r *Resp) readBulk() (v Value, err error) {
 	v.typ = "bulk"
 
-	len, _, err := r.readInteger()
+	length, _, err := r.readInteger()
 	if err != nil {
 		return v, err
 	}
 
-	bulk := make([]byte, len)
-	r.reader.Read(bulk)
+	bulk := make([]byte, length)
+	_, err = io.ReadFull(r.reader, bulk)
+	if err != nil {
+		return v, err
+	}
 	v.bulk = string(bulk)
 
 	// Read the trailing CRLF
@@ -125,9 +128,9 @@ func (v Value) Marshal() []byte {
 	case "string":
 		return v.marshalString()
 	case "null":
-		return v.marshallNull()
+		return v.marshalNull()
 	case "error":
-		return v.marshallError()
+		return v.marshalError()
 	default:
 		return []byte{}
 	}
@@ -167,7 +170,7 @@ func (v Value) marshalArray() []byte {
 	return bytes
 }
 
-func (v Value) marshallError() []byte {
+func (v Value) marshalError() []byte {
 	var bytes []byte
 	bytes = append(bytes, ERROR)
 	bytes = append(bytes, v.str...)
@@ -176,7 +179,7 @@ func (v Value) marshallError() []byte {
 	return bytes
 }
 
-func (v Value) marshallNull() []byte {
+func (v Value) marshalNull() []byte {
 	return []byte("$-1\r\n")
 }
 
