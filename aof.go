@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"io"
 	"os"
 	"sync"
@@ -10,8 +9,8 @@ import (
 
 type Aof struct {
 	file *os.File
-	rd   *bufio.Reader
 	mu   sync.Mutex
+	done chan struct{}
 }
 
 func NewAof(path string) (*Aof, error) {
@@ -22,16 +21,21 @@ func NewAof(path string) (*Aof, error) {
 
 	aof := &Aof{
 		file: f,
-		rd:   bufio.NewReader(f),
+		done: make(chan struct{}),
 	}
 
-	// Start a goroutine to sync AOF to disk every 1 second
 	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
 		for {
-			aof.mu.Lock()
-			aof.file.Sync()
-			aof.mu.Unlock()
-			time.Sleep(time.Second)
+			select {
+			case <-ticker.C:
+				aof.mu.Lock()
+				aof.file.Sync()
+				aof.mu.Unlock()
+			case <-aof.done:
+				return
+			}
 		}
 	}()
 
@@ -39,6 +43,8 @@ func NewAof(path string) (*Aof, error) {
 }
 
 func (aof *Aof) Close() error {
+	close(aof.done)
+
 	aof.mu.Lock()
 	defer aof.mu.Unlock()
 
@@ -67,26 +73,22 @@ func (aof *Aof) Read(callback func(value Value)) error {
 	aof.mu.Lock()
 	defer aof.mu.Unlock()
 
-	// Seek to the beginning of the file
-	_, err := aof.file.Seek(0, 0)
+	_, err := aof.file.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
-
-	// Reset the reader after seeking
-	aof.rd = bufio.NewReader(aof.file)
 
 	resp := NewResp(aof.file)
 
 	for {
 		value, err := resp.Read()
-		if err == nil {
-			callback(value)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
 		}
-		if err == io.EOF {
-			break
-		}
-		return err
+		callback(value)
 	}
 
 	return nil
