@@ -49,9 +49,9 @@ func get(args []Value) Value {
 
 	key := args[0].bulk
 
-	SETmu.Lock()
+	SETmu.RLock()
 	value, ok := SETs[key]
-	SETmu.Unlock()
+	SETmu.RUnlock()
 	if !ok {
 		return Value{typ: "null"}
 	}
@@ -91,9 +91,9 @@ func hget(args []Value) Value {
 	hash := args[0].bulk
 	key := args[1].bulk
 
-	HSETmu.Lock()
+	HSETmu.RLock()
 	value, ok := HSETs[hash][key]
-	HSETmu.Unlock()
+	HSETmu.RUnlock()
 	if !ok {
 		return Value{typ: "null"}
 	}
@@ -110,14 +110,14 @@ func hgetall(args []Value) Value {
 	hash := args[0].bulk
 
 	HSETmu.RLock()
+	defer HSETmu.RUnlock()
+
 	m, ok := HSETs[hash]
-	HSETmu.RUnlock()
 	if !ok {
 		return Value{typ: "null"}
 	}
 
 	res := make([]Value, 0, len(m)*2)
-
 	for k, v := range m {
 		res = append(res, Value{typ: "bulk", bulk: k}, Value{typ: "bulk", bulk: v})
 	}
